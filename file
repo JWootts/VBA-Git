@@ -1,0 +1,84 @@
+'' Module created to help format Access VBA Projects into source folders for GIT Repositories
+
+Option Compare Database
+Option Explicit
+
+''** Edit the values below according to the current project you are working with
+Private Const EXPORT_DIR As String = "C:\Users\JWootts\Documents\testVBA" 'git project /// export location
+Private Const EXPORT_SAVE As Boolean = True 'export /// save files
+Private Const IMPORT_COMMANDS As Boolean = False 'debug.print export cmds
+
+Public Function initExportProcess()
+
+    Dim strPath As String: strPath = EXPORT_DIR
+    Dim FSO As Object: Set FSO = CreateObject("Scripting.FileSystemObject")
+    Dim strTables As String, strQueries As String, strForms As String, strMods As String, strName As String, strFileName As String
+    Dim strCurrentTable As String
+    
+    Dim tbl As Object, qry As Object, frm As Object, mmod As Object
+    
+    '' -- Create any required folders /// paths
+    strPath = CreateFolder(FSO, strPath, Application.CurrentProject.Name)
+    strTables = CreateFolder(FSO, strPath, "Tables"): strQueries = CreateFolder(FSO, strPath, "Queries")
+    strForms = CreateFolder(FSO, strPath, "Forms"): strMods = CreateFolder(FSO, strPath, "Modules")
+
+    '' --- Export Tables
+    For Each tbl In CurrentDb.TableDefs
+      strName = tbl.Name
+      If Left(strName, 4) <> "MSys" And Left(strName, 1) <> "~" Then
+          strCurrentTable = CreateFolder(FSO, strTables, strName)
+          strFileName = strCurrentTable & "\" & strName & ".tbl"
+          If EXPORT_SAVE Then: Application.ExportXML acExportTable, strName, strFileName, strFileName & ".XSD", _
+                                                strFileName & ".XSL", , acUTF8, acEmbedSchema + acExportAllTableAndFieldProperties
+          If IMPORT_COMMANDS Then: Debug.Print "Application.ImportXML """ & strFileName & """, acStructureAndData"
+      End If
+    Next
+    
+    '' --- Export Queries
+    For Each qry In CurrentDb.QueryDefs
+        strName = qry.Name
+        If Left(strName, 1) <> "~" Then
+            strFileName = strQueries & "\" & strName & ".qry"
+            If EXPORT_SAVE Then: Application.SaveAsText acQuery, strName, strFileName
+            If IMPORT_COMMANDS Then: Debug.Print "Application.LoadFromText acQuery, """ & strName & """, """ & strFileName & """"
+        End If
+    Next
+    
+    '' --- Export Forms
+    For Each frm In Application.CurrentProject.AllForms
+        strName = frm.Name
+        strFileName = strForms & "\" & strName & ".frm"
+        If EXPORT_SAVE Then: Application.SaveAsText acForm, strName, strFileName
+        If IMPORT_COMMANDS Then: Debug.Print "Application.LoadFromText acForm, """ & strName & """, """ & strFileName & """"
+    Next
+    
+    '' --- Export Modules
+    For Each mmod In Application.VBE.ActiveVBProject.VBComponents
+        strName = mmod.Name
+        strFileName = strMods & "\" & strName
+        Select Case mmod.Type
+            Case 1 ' vbModule
+                If EXPORT_SAVE Then: mmod.Export strFileName & ".bas"
+                If IMPORT_COMMANDS Then: Debug.Print "Application.VBE.ActiveVBProject.VBComponents.Import """ & strFileName & ".bas"; """"
+            Case 2 ' vbClass
+                If EXPORT_SAVE Then: mmod.Export strFileName & ".cls"
+                If IMPORT_COMMANDS Then: Debug.Print "Application.VBE.ActiveVBProject.VBComponents.Import """ & strFileName & ".cls"; """"
+            Case Else
+                Debug.Print "Unknown mod type: " & mmod.Type, mmod.Name
+        End Select
+    Next
+    
+    If EXPORT_SAVE Then MsgBox "Files saved in  " & strPath, vbOKOnly, "Export Complete": OpenGitTerminal
+    
+End Function
+
+Private Function OpenGitTerminal()
+    
+    Call Shell("cmd.exe /S /K" & "cd ""C:\Program Files (x86)\GitExtensions\"" & gitex.cmd browse """ + EXPORT_DIR + """ ", vbHide)
+
+End Function
+
+Private Function CreateFolder(ByRef FSO As Object, ByVal strPath As String, ByVal strAdd As String) As String
+    CreateFolder = strPath & "\" & strAdd
+    If Not FSO.FolderExists(CreateFolder) Then MKDIR CreateFolder
+End Function
