@@ -24,14 +24,16 @@ Public Function initExportProcess()
 
     '' --- Export Tables
     For Each tbl In CurrentDb.TableDefs
-      strName = tbl.Name
-      If Left(strName, 4) <> "MSys" And Left(strName, 1) <> "~" Then
-          strCurrentTable = CreateFolder(FSO, strTables, strName)
-          strFileName = strCurrentTable & "\" & strName & ".tbl"
-          If EXPORT_SAVE Then: Application.ExportXML acExportTable, strName, strFileName, strFileName & ".XSD", _
-                                                strFileName & ".XSL", , acUTF8, acEmbedSchema + acExportAllTableAndFieldProperties
-          If IMPORT_COMMANDS Then: Debug.Print "Application.ImportXML """ & strFileName & """, acStructureAndData"
-      End If
+        If (tbl.Connect = "") Then
+            strName = tbl.Name
+            If Left(strName, 4) <> "MSys" And Left(strName, 1) <> "~" Then
+                strCurrentTable = CreateFolder(FSO, strTables, strName)
+                strFileName = strCurrentTable & "\" & strName & ".tbl"
+                If EXPORT_SAVE Then: Application.ExportXML acExportTable, strName, strFileName, strFileName & ".XSD", _
+                                                      strFileName & ".XSL", , acUTF8, acEmbedSchema + acExportAllTableAndFieldProperties
+                If IMPORT_COMMANDS Then: Debug.Print "Application.ImportXML """ & strFileName & """, acStructureAndData"
+            End If
+        End If
     Next
     
     '' --- Export Queries
