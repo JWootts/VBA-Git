@@ -6,16 +6,24 @@ Option Explicit
 ''** Edit the values below according to the current project you are working with
 Private Const EXPORT_DIR As String = "C:\Users\JWootts\Documents\testVBA" 'git project /// export location
 Private Const EXPORT_SAVE As Boolean = True 'export /// save files
-Private Const IMPORT_COMMANDS As Boolean = False 'debug.print export cmds
+Private Const IMPORT_COMMANDS As Boolean = True 'debug.print export cmds
+Private Const GIT_EXTENSION_CLIENT As Boolean = False 'Git extension auto-open
+
+'' storage
+Private importCommandArrList As Object
 
 Public Function initExportProcess()
 
+    On Error GoTo ErrorHandler
+    
     Dim strPath As String: strPath = EXPORT_DIR
     Dim FSO As Object: Set FSO = CreateObject("Scripting.FileSystemObject")
     Dim strTables As String, strQueries As String, strForms As String, strMods As String, strName As String, strFileName As String
-    Dim strCurrentTable As String
+    Dim strCurrentTable As String, strQueryConnections As String
     
     Dim tbl As Object, qry As Object, frm As Object, mmod As Object
+    
+    Set importCommandArrList = CreateObject("System.Collections.ArrayList")
     
     '' -- Create any required folders /// paths
     strPath = CreateFolder(FSO, strPath, Application.CurrentProject.Name)
@@ -31,18 +39,28 @@ Public Function initExportProcess()
                 strFileName = strCurrentTable & "\" & strName & ".tbl"
                 If EXPORT_SAVE Then: Application.ExportXML acExportTable, strName, strFileName, strFileName & ".XSD", _
                                                       strFileName & ".XSL", , acUTF8, acEmbedSchema + acExportAllTableAndFieldProperties
-                If IMPORT_COMMANDS Then: Debug.Print "Application.ImportXML """ & strFileName & """, acStructureAndData"
+                If IMPORT_COMMANDS Then: importCommandArrList.Add "Application.ImportXML """ & strFileName & """, acStructureAndData"
             End If
+        Else
+            strCurrentTable = CreateFolder(FSO, strTables, "connections")
+            strFileName = strCurrentTable & "\" & tbl.Name & ".conn"
+            Call WriteConnection(strFileName, tbl)
         End If
     Next
     
     '' --- Export Queries
     For Each qry In CurrentDb.QueryDefs
-        strName = qry.Name
-        If Left(strName, 1) <> "~" Then
-            strFileName = strQueries & "\" & strName & ".qry"
-            If EXPORT_SAVE Then: Application.SaveAsText acQuery, strName, strFileName
-            If IMPORT_COMMANDS Then: Debug.Print "Application.LoadFromText acQuery, """ & strName & """, """ & strFileName & """"
+        If (qry.Connect = "") Then
+            strName = qry.Name
+            If Left(strName, 1) <> "~" Then
+                strFileName = strQueries & "\" & strName & ".qry"
+                If EXPORT_SAVE Then: Application.SaveAsText acQuery, strName, strFileName
+                If IMPORT_COMMANDS Then: importCommandArrList.Add "Application.LoadFromText acQuery, """ & strName & """, """ & strFileName & """"
+            End If
+        Else
+            strQueryConnections = CreateFolder(FSO, strTables, "connections")
+            strFileName = strCurrentTable & "\" & qry.Name & ".conn"
+            Call WriteConnection(strFileName, qry)
         End If
     Next
     
@@ -51,7 +69,7 @@ Public Function initExportProcess()
         strName = frm.Name
         strFileName = strForms & "\" & strName & ".frm"
         If EXPORT_SAVE Then: Application.SaveAsText acForm, strName, strFileName
-        If IMPORT_COMMANDS Then: Debug.Print "Application.LoadFromText acForm, """ & strName & """, """ & strFileName & """"
+        If IMPORT_COMMANDS Then: importCommandArrList.Add "Application.LoadFromText acForm, """ & strName & """, """ & strFileName & """"
     Next
     
     '' --- Export Modules
@@ -61,16 +79,54 @@ Public Function initExportProcess()
         Select Case mmod.Type
             Case 1 ' vbModule
                 If EXPORT_SAVE Then: mmod.Export strFileName & ".bas"
-                If IMPORT_COMMANDS Then: Debug.Print "Application.VBE.ActiveVBProject.VBComponents.Import """ & strFileName & ".bas"; """"
+                If IMPORT_COMMANDS Then: importCommandArrList.Add "Application.VBE.ActiveVBProject.VBComponents.Import """ & strFileName & ".bas" & """"
             Case 2 ' vbClass
                 If EXPORT_SAVE Then: mmod.Export strFileName & ".cls"
-                If IMPORT_COMMANDS Then: Debug.Print "Application.VBE.ActiveVBProject.VBComponents.Import """ & strFileName & ".cls"; """"
+                If IMPORT_COMMANDS Then: importCommandArrList.Add "Application.VBE.ActiveVBProject.VBComponents.Import """ & strFileName & ".cls" & """"
             Case Else
                 Debug.Print "Unknown mod type: " & mmod.Type, mmod.Name
         End Select
     Next
     
-    If EXPORT_SAVE Then MsgBox "Files saved in  " & strPath, vbOKOnly, "Export Complete": OpenGitTerminal
+    If EXPORT_SAVE Then MsgBox "Files saved in  " & strPath, vbOKOnly, "Export Complete"
+    If IMPORT_COMMANDS Then: Call WriteImportCommands(strPath)
+    If GIT_EXTENSION_CLIENT Then: OpenGitTerminal
+    
+Cleanup:
+    
+    Set importCommandArrList = Nothing
+    Exit Function
+    
+ErrorHandler:
+
+    If Err.Number <> 0 Then
+        Debug.Print "Error - " & Err.Number & " : " & Err.Description
+        Err.Clear
+        GoTo Cleanup
+    End If
+    
+End Function
+
+Private Function WriteConnection(strPath As String, o As Object)
+    Open strPath For Output As #2
+    Print #2, o.Connect & ";" & o.Name & ";" & o.DateCreated & ";" & o.LastUpdated & ";"
+    Close #2
+End Function
+
+Private Function WriteImportCommands(strPath As String)
+    
+    If importCommandArrList Is Nothing Or IsNull(importCommandArrList) Then: Exit Function
+    
+    Dim strFull As String
+    Dim s As Variant
+    
+    For Each s In importCommandArrList
+        strFull = strFull + s + vbNewLine
+    Next
+    
+    Open strPath & "\import-commands.txt" For Output As #1
+    Print #1, strFull
+    Close #1
     
 End Function
 
